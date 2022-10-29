@@ -70,7 +70,7 @@ func (notificationChannel *TelegramNotificationChannel) Run() {
 		case feedProcessorUpdate := <-(*notificationChannel).feedProcessorUpdatesChannel:
 
 			// TODO: verify transactions logic
-			db := connectDatabaseEnableTransactions(true)
+			db := connectDatabase()
 
 			history := History{
 				UserId:                notificationChannel.userProcessor.id,

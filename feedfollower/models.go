@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -60,12 +61,12 @@ func connectDatabase() *gorm.DB {
 		dbSingletonLock.Lock()
 		defer dbSingletonLock.Unlock()
 
-		dbSingleton := connectDatabaseEnableTransactions(false)
-
-		return dbSingleton
-	} else {
-		return dbSingleton
+		if dbSingleton == nil {
+			dbSingleton = connectDatabaseEnableTransactions(false)
+		}
 	}
+
+	return dbSingleton
 }
 
 func connectDatabaseEnableTransactions(transactions bool) *gorm.DB {
@@ -107,6 +108,15 @@ func connectDatabaseEnableTransactions(transactions bool) *gorm.DB {
 	if err != nil {
 		panic("failed to connect database")
 	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		panic("failed to connect database")
+	}
+
+	sqlDB.SetMaxIdleConns(2)
+	sqlDB.SetMaxOpenConns(2)
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
 	return db
 }
