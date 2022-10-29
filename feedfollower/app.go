@@ -445,7 +445,7 @@ func (rssFeedUpdateGenerator *RssFeedUpdateGenerator) Run() {
 			}
 
 			// TODO: rate limit instead of configuring number of last items
-			for _, item := range feed.Items[:20] {
+			for _, item := range feed.Items {
 				feedUpdate := FeedUpdate{
 					feedId:      rssFeedUpdateGenerator.FeedId,
 					feedTitle:   feed.Title,
