@@ -9,10 +9,13 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
+
+var TelegramSendMessageLock = &sync.Mutex{}
 
 func NewTelegramNotificationChannel(identifier string) {
 	// TODO: handle errors
@@ -133,7 +136,12 @@ func (api *TelegramBotAPI) Start(token string, debug bool) error {
 	log.Println("[TelegramBotApi::Start] Commands config", commandConfig)
 
 	for {
-		response, err := bot.Request(commandConfig)
+
+		TelegramSendMessageLock.Lock()
+		response, err := func() (*tgbotapi.APIResponse, error) {
+			defer TelegramSendMessageLock.Unlock()
+			return bot.Request(commandConfig)
+		}()
 
 		if err != nil {
 			log.Println("[TelegramBotApi::Start] Error while processing request", response, err)
@@ -253,7 +261,11 @@ func (api *TelegramBotAPI) HandleUpdates() {
 		}
 		msg.ReplyToMessageID = update.Message.MessageID
 
-		api.Bot.Send(msg)
+		TelegramSendMessageLock.Lock()
+		func() {
+			defer TelegramSendMessageLock.Unlock()
+			api.Bot.Send(msg)
+		}()
 	}
 }
 
@@ -294,7 +306,11 @@ func (api *TelegramBotAPI) SendMessage(idString string, message string) error {
 
 	msg.ParseMode = "HTML"
 
-	_, err = api.Bot.Send(msg)
+	TelegramSendMessageLock.Lock()
+	_, err = func() (tgbotapi.Message, error) {
+		defer TelegramSendMessageLock.Unlock()
+		return api.Bot.Send(msg)
+	}()
 
 	if err != nil {
 		log.Printf("Error %s sending message %s", err, msg.Text)
