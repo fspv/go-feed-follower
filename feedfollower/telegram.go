@@ -15,6 +15,10 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
+// Telegram Bot api instance should be created only once to avoid duplicate messagees
+var TelegramBotApiSingleton *tgbotapi.BotAPI
+var TelegramBotApiBotOnce = &sync.Once{}
+
 var TelegramSendMessageLock = &sync.Mutex{}
 
 func NewTelegramNotificationChannel(identifier string) {
@@ -105,18 +109,42 @@ type TelegramBotAPI struct {
 
 func (api *TelegramBotAPI) Start(token string, debug bool) error {
 	log.Println("[TelegramBotAPI::Start] Initialising bot api")
-	bot, err := tgbotapi.NewBotAPI(token)
 
-	if err != nil {
-		log.Println(err)
-		return err
-	}
+	// Telegram Bot api instance should be created only once to avoid duplicate messagees
+	TelegramBotApiBotOnce.Do(
+		func() {
+			var err error
+			tmp, err := tgbotapi.NewBotAPI(token)
+
+			if err != nil {
+				panic(err)
+			}
+
+			TelegramBotApiSingleton = tmp
+		},
+	)
+
+	bot := TelegramBotApiSingleton
 
 	log.Printf("[TelegramBotApi::Start] Authorized on account %s", bot.Self.UserName)
 
 	bot.Debug = debug
 
 	api.Bot = bot
+
+	return nil
+}
+
+func (api *TelegramBotAPI) Stop() {
+	api.Bot.StopReceivingUpdates()
+}
+
+func (api *TelegramBotAPI) HandleUpdates() {
+	// TODO: the only way to shut this down is to kill the app
+	// Contexts are currently not supported by the tg bot api lib
+	// so for now no straightforward way to fix this
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
 
 	commandConfig := tgbotapi.NewSetMyCommands(
 		tgbotapi.BotCommand{
@@ -140,7 +168,7 @@ func (api *TelegramBotAPI) Start(token string, debug bool) error {
 		TelegramSendMessageLock.Lock()
 		response, err := func() (*tgbotapi.APIResponse, error) {
 			defer TelegramSendMessageLock.Unlock()
-			return bot.Request(commandConfig)
+			return api.Bot.Request(commandConfig)
 		}()
 
 		if err != nil {
@@ -150,27 +178,13 @@ func (api *TelegramBotAPI) Start(token string, debug bool) error {
 				log.Println("[TelegramBotApi::Start] Retrying after ", response.Parameters.RetryAfter)
 				time.Sleep(time.Duration(response.Parameters.RetryAfter) * time.Second)
 			} else {
-				return err
+				panic(err)
 			}
 		} else {
 			log.Println("[TelegramBotApi::Start] Request ok", response)
 			break
 		}
 	}
-
-	return nil
-}
-
-func (api *TelegramBotAPI) Stop() {
-	api.Bot.StopReceivingUpdates()
-}
-
-func (api *TelegramBotAPI) HandleUpdates() {
-	// TODO: the only way to shut this down is to kill the app
-	// Contexts are currently not supported by the tg bot api lib
-	// so for now no straightforward way to fix this
-	u := tgbotapi.NewUpdate(0)
-	u.Timeout = 60
 
 	updates := api.Bot.GetUpdatesChan(u)
 
