@@ -11,7 +11,11 @@ import (
 
 	_ "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/postgres"
 	"gorm.io/driver/postgres"
+	"sync"
 )
+
+var dbSingleton *gorm.DB
+var dbSingletonLock = &sync.Mutex{}
 
 // TODO: add foreign keys
 type User struct {
@@ -52,7 +56,16 @@ type History struct {
 }
 
 func connectDatabase() *gorm.DB {
-	return connectDatabaseEnableTransactions(false)
+	if dbSingleton == nil {
+		dbSingletonLock.Lock()
+		defer dbSingletonLock.Unlock()
+
+		dbSingleton := connectDatabaseEnableTransactions(false)
+
+		return dbSingleton
+	} else {
+		return dbSingleton
+	}
 }
 
 func connectDatabaseEnableTransactions(transactions bool) *gorm.DB {
