@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -131,13 +132,22 @@ func (api *TelegramBotAPI) Start(token string, debug bool) error {
 
 	log.Println("[TelegramBotApi::Start] Commands config", commandConfig)
 
-	response, err := bot.Request(commandConfig)
+	for {
+		response, err := bot.Request(commandConfig)
 
-	if err != nil {
-		log.Println("[TelegramBotApi::Start] Error while processing request", response, err)
+		if err != nil {
+			log.Println("[TelegramBotApi::Start] Error while processing request", response, err)
+			if response.ErrorCode == 429 {
+				// Request rate limited, try again later
+				time.Sleep(60 * time.Second)
+			} else {
+				return err
+			}
+		} else {
+			log.Println("[TelegramBotApi::Start] Request ok", response)
+			break
+		}
 	}
-
-	log.Println("[TelegramBotApi::Start] Request ok", response)
 
 	return nil
 }
