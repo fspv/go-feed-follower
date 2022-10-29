@@ -261,7 +261,7 @@ func (userProcessor *UserProcessor) Run() {
 	userProcessor.SyncNotificationChannels()
 
 	wg.Add(1)
-	go RunPeriodically(userProcessor.SyncNotificationChannels, 10*time.Second, &wg, userProcessor.ctx)
+	go RunPeriodically(userProcessor.SyncNotificationChannels, 120*time.Second, &wg, userProcessor.ctx)
 
 	wg.Add(1)
 	go func() {
@@ -388,7 +388,7 @@ func (feedProcessor *FeedProcessor) Run() {
 	wgFeedProcessorTasks := sync.WaitGroup{}
 
 	wgFeedProcessorTasks.Add(1)
-	go RunPeriodically(feedProcessor.SyncUserProcessors, 10*time.Second, &wgFeedProcessorTasks, feedProcessor.ctx)
+	go RunPeriodically(feedProcessor.SyncUserProcessors, 120*time.Second, &wgFeedProcessorTasks, feedProcessor.ctx)
 	wgFeedProcessorTasks.Add(1)
 	go func() {
 		defer wgFeedProcessorTasks.Done()
@@ -457,7 +457,7 @@ func (rssFeedUpdateGenerator *RssFeedUpdateGenerator) Run() {
 				rssFeedUpdateGenerator.Updates <- feedUpdate
 			}
 		},
-		10*time.Second,
+		120*time.Second,
 		&wg,
 		(*rssFeedUpdateGenerator).ctx,
 	)
@@ -559,7 +559,7 @@ func Run() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		RunPeriodically(feedProcessors.Update, 10*time.Second, &wg, ctx)
+		RunPeriodically(feedProcessors.Update, 120*time.Second, &wg, ctx)
 	}()
 
 	api := &TelegramBotAPI{}
