@@ -139,7 +139,8 @@ func (api *TelegramBotAPI) Start(token string, debug bool) error {
 			log.Println("[TelegramBotApi::Start] Error while processing request", response, err)
 			if response.ErrorCode == 429 {
 				// Request rate limited, try again later
-				time.Sleep(60 * time.Second)
+				log.Println("[TelegramBotApi::Start] Retrying after ", response.Parameters.RetryAfter)
+				time.Sleep(time.Duration(response.Parameters.RetryAfter) * time.Second)
 			} else {
 				return err
 			}
