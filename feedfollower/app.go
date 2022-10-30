@@ -488,8 +488,6 @@ func (feedProcessors *FeedProcessors) Update() {
 		panic("Failed to fetch results from the database")
 	}
 
-	wg := sync.WaitGroup{}
-
 	for rows.Next() {
 		var feed Feed
 		db.ScanRows(rows, &feed)
@@ -502,10 +500,10 @@ func (feedProcessors *FeedProcessors) Update() {
 			feedUpdateGenerator := &RssFeedUpdateGenerator{
 				FeedId:  feed.Id,
 				Updates: make(chan FeedUpdate),
-				wg:      &wg,
+				wg:      feedProcessors.wg,
 				ctx:     (*feedProcessors).ctx,
 			}
-			(*(*feedProcessors).wg).Add(1)
+			feedProcessors.wg.Add(1)
 			go feedUpdateGenerator.Run()
 
 			feedProcessor := &FeedProcessor{
@@ -513,9 +511,9 @@ func (feedProcessors *FeedProcessors) Update() {
 				observers:        sync.Map{},
 				updatesGenerator: feedUpdateGenerator,
 				ctx:              (*feedProcessors).ctx,
-				wg:               &wg,
+				wg:               feedProcessors.wg,
 			}
-			(*(*feedProcessors).wg).Add(1)
+			feedProcessors.wg.Add(1)
 			go feedProcessor.Run()
 		}
 	}
@@ -557,17 +555,14 @@ func Run() {
 	}
 
 	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		RunPeriodically(feedProcessors.Update, 120*time.Second, &wg, ctx)
-	}()
+	go RunPeriodically(feedProcessors.Update, 120*time.Second, &wg, ctx)
 
 	api := &TelegramBotAPI{}
 	api.Start(os.Getenv("TELEGRAM_BOT_API_KEY"), true)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		api.HandleUpdates()
+		api.HandleUpdates(ctx)
 	}()
 
 	wg.Wait()

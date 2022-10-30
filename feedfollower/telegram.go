@@ -1,16 +1,18 @@
 package feedfollower
 
 import (
+	"context"
 	"errors"
 	"fmt"
-	"github.com/microcosm-cc/bluemonday"
-	"github.com/mmcdole/gofeed"
 	"log"
 	"net/url"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/microcosm-cc/bluemonday"
+	"github.com/mmcdole/gofeed"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -139,7 +141,7 @@ func (api *TelegramBotAPI) Stop() {
 	api.Bot.StopReceivingUpdates()
 }
 
-func (api *TelegramBotAPI) HandleUpdates() {
+func (api *TelegramBotAPI) HandleUpdates(ctx context.Context) {
 	// TODO: the only way to shut this down is to kill the app
 	// Contexts are currently not supported by the tg bot api lib
 	// so for now no straightforward way to fix this
@@ -188,98 +190,105 @@ func (api *TelegramBotAPI) HandleUpdates() {
 
 	updates := api.Bot.GetUpdatesChan(u)
 
-	for update := range updates {
-		if update.Message == nil { // ignore any non-Message updates
-			log.Println("This is not a message", update)
-			continue
-		}
-		if !update.Message.IsCommand() { // ignore any non-command Messages
-			log.Println("This is not a command", update)
-			continue
-		}
+	for {
+		select {
+		case <-ctx.Done():
+			log.Println("[TelegramBotApi::HandleUpdates] Stop listening for telegram updates")
+			return
+		case update := <-updates:
 
-		commandStartOffset := update.Message.Entities[0].Offset
-		commandEndOffset := commandStartOffset + update.Message.Entities[0].Length
-
-		var argsString string
-
-		if commandEndOffset+1 < len(update.Message.Text) {
-			argsString = update.Message.Text[commandEndOffset+1:]
-		} else {
-			argsString = ""
-		}
-
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-
-		msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
-
-		switch update.Message.Command() {
-		case "start":
-			msg.Text = "Welcome! Use /subscribe command with URL as an argument to subscribe to RSS"
-			NewTelegramNotificationChannel(strconv.Itoa(int(update.Message.Chat.ID)))
-		case "subscribe":
-			// TODO: limit number of subscriptions
-			if argsString == "" {
-				msg.Text = "Please provide a url after the command"
-			} else {
-				url, err := url.ParseRequestURI(strings.TrimSpace(argsString))
-				if err == nil {
-					fp := gofeed.NewParser()
-					_, err := fp.ParseURL(url.String())
-
-					if err != nil {
-						msg.Text = "Incorrect feed, failed to parse" + fmt.Sprint(err)
-						log.Println("Failed to parse feed", err)
-					} else {
-						msg.Text = "Subscribed to " + url.String()
-						NewRssSubscription(url.String(), strconv.Itoa(int(update.Message.Chat.ID)))
-					}
-				} else {
-					msg.Text = "Error parsing url: " + fmt.Sprint(err)
-				}
+			if update.Message == nil { // ignore any non-Message updates
+				log.Println("This is not a message", update)
+				continue
 			}
-		case "unsubscribe":
-			if argsString == "" {
+			if !update.Message.IsCommand() { // ignore any non-command Messages
+				log.Println("This is not a command", update)
+				continue
+			}
+
+			commandStartOffset := update.Message.Entities[0].Offset
+			commandEndOffset := commandStartOffset + update.Message.Entities[0].Length
+
+			var argsString string
+
+			if commandEndOffset+1 < len(update.Message.Text) {
+				argsString = update.Message.Text[commandEndOffset+1:]
+			} else {
+				argsString = ""
+			}
+
+			log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
+
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, "")
+
+			switch update.Message.Command() {
+			case "start":
+				msg.Text = "Welcome! Use /subscribe command with URL as an argument to subscribe to RSS"
+				NewTelegramNotificationChannel(strconv.Itoa(int(update.Message.Chat.ID)))
+			case "subscribe":
+				// TODO: limit number of subscriptions
+				if argsString == "" {
+					msg.Text = "Please provide a url after the command"
+				} else {
+					url, err := url.ParseRequestURI(strings.TrimSpace(argsString))
+					if err == nil {
+						fp := gofeed.NewParser()
+						_, err := fp.ParseURL(url.String())
+
+						if err != nil {
+							msg.Text = "Incorrect feed, failed to parse" + fmt.Sprint(err)
+							log.Println("Failed to parse feed", err)
+						} else {
+							msg.Text = "Subscribed to " + url.String()
+							NewRssSubscription(url.String(), strconv.Itoa(int(update.Message.Chat.ID)))
+						}
+					} else {
+						msg.Text = "Error parsing url: " + fmt.Sprint(err)
+					}
+				}
+			case "unsubscribe":
+				if argsString == "" {
+					// TOOD: paginate list
+					subscriptions := GetSubscriptions(strconv.Itoa(int(update.Message.Chat.ID)))
+
+					buttons := [][]tgbotapi.KeyboardButton{}
+
+					for _, subscription := range subscriptions {
+						buttons = append(buttons, tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("/unsubscribe "+subscription)))
+					}
+
+					numericKeyboard := tgbotapi.NewReplyKeyboard(buttons...)
+
+					msg.Text = "Select a feed to unsubscribe from"
+					msg.ReplyMarkup = numericKeyboard
+				} else {
+					msg.Text = "Unsubscribed from " + argsString
+					msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
+
+					DeleteRssSubscription(argsString, strconv.Itoa(int(update.Message.Chat.ID)))
+				}
+			case "list":
 				// TOOD: paginate list
 				subscriptions := GetSubscriptions(strconv.Itoa(int(update.Message.Chat.ID)))
 
-				buttons := [][]tgbotapi.KeyboardButton{}
+				subscriptionList := ""
 
 				for _, subscription := range subscriptions {
-					buttons = append(buttons, tgbotapi.NewKeyboardButtonRow(tgbotapi.NewKeyboardButton("/unsubscribe "+subscription)))
+					subscriptionList = subscriptionList + subscription + "\n"
 				}
 
-				numericKeyboard := tgbotapi.NewReplyKeyboard(buttons...)
-
-				msg.Text = "Select a feed to unsubscribe from"
-				msg.ReplyMarkup = numericKeyboard
-			} else {
-				msg.Text = "Unsubscribed from " + argsString
-				msg.ReplyMarkup = tgbotapi.NewRemoveKeyboard(true)
-
-				DeleteRssSubscription(argsString, strconv.Itoa(int(update.Message.Chat.ID)))
+				msg.Text = "List of all the subscriptions:\n" + subscriptionList
+			default:
+				msg.Text = "I don't know that command: " + update.Message.Command()
 			}
-		case "list":
-			// TOOD: paginate list
-			subscriptions := GetSubscriptions(strconv.Itoa(int(update.Message.Chat.ID)))
+			msg.ReplyToMessageID = update.Message.MessageID
 
-			subscriptionList := ""
-
-			for _, subscription := range subscriptions {
-				subscriptionList = subscriptionList + subscription + "\n"
-			}
-
-			msg.Text = "List of all the subscriptions:\n" + subscriptionList
-		default:
-			msg.Text = "I don't know that command: " + update.Message.Command()
+			TelegramSendMessageLock.Lock()
+			func() {
+				defer TelegramSendMessageLock.Unlock()
+				api.Bot.Send(msg)
+			}()
 		}
-		msg.ReplyToMessageID = update.Message.MessageID
-
-		TelegramSendMessageLock.Lock()
-		func() {
-			defer TelegramSendMessageLock.Unlock()
-			api.Bot.Send(msg)
-		}()
 	}
 }
 
