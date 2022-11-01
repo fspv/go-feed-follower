@@ -36,3 +36,13 @@ func RunPeriodically(toRun func(), interval time.Duration, wg *sync.WaitGroup, c
 		}
 	}
 }
+
+func ProcessChannelEventUntilContextDone(processor func(), ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+		default:
+			processor()
+		}
+	}
+}

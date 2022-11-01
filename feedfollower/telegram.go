@@ -115,14 +115,19 @@ func (api *TelegramBotAPI) Start(token string, debug bool) error {
 	// Telegram Bot api instance should be created only once to avoid duplicate messagees
 	TelegramBotApiBotOnce.Do(
 		func() {
-			var err error
-			tmp, err := tgbotapi.NewBotAPI(token)
+			for {
+				var err error
 
-			if err != nil {
-				panic(err)
+				tmp, err := tgbotapi.NewBotAPI(token)
+
+				if err != nil {
+					log.Println("[TelegramBotApi::Start] Failed to start, retrying: ", err)
+				} else {
+					TelegramBotApiSingleton = tmp
+
+					break
+				}
 			}
-
-			TelegramBotApiSingleton = tmp
 		},
 	)
 

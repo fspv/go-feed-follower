@@ -48,7 +48,6 @@ type TelegramNotificationChannel struct {
 }
 
 func (notificationChannel *TelegramNotificationChannel) Run() {
-	defer notificationChannel.wg.Done()
 	defer notificationChannel.Close()
 
 	(*notificationChannel).active = true
@@ -141,6 +140,8 @@ func (notificationChannel *TelegramNotificationChannel) Id() uint {
 }
 
 func (notificationChannel *TelegramNotificationChannel) Close() {
+	defer notificationChannel.wg.Done()
+
 	log.Println("[TelegramNotificationChannel::Close] Shutting down")
 
 	(*notificationChannel).userProcessor.Unsubscribe(notificationChannel)
@@ -440,7 +441,7 @@ func (rssFeedUpdateGenerator *RssFeedUpdateGenerator) Run() {
 			feed, err := fp.ParseURL(feed.Url)
 
 			if err != nil {
-				log.Println(err)
+				log.Println("[RssFeedUpdateGenerator::Run]", err)
 				return
 			}
 
