@@ -2,15 +2,18 @@ package feedfollower
 
 import (
 	"context"
+
 	"github.com/mmcdole/gofeed"
+
 	// "github.com/mmcdole/gofeed/rss"
-	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 	"log"
 	"os"
 	"os/signal"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 type FeedUpdate struct {
@@ -20,10 +23,11 @@ type FeedUpdate struct {
 	title       string
 	description string
 	url         string
+	hash        string
 }
 
 func (feedUpdate *FeedUpdate) Hash() string {
-	return (*feedUpdate).title + "|" + (*feedUpdate).url
+	return (*feedUpdate).hash
 }
 
 type Observer interface {
@@ -71,21 +75,39 @@ func (notificationChannel *TelegramNotificationChannel) Run() {
 			// TODO: verify transactions logic
 			db := connectDatabase()
 
-			history := History{
-				UserId:                notificationChannel.userProcessor.id,
-				FeedId:                feedProcessorUpdate.feedId,
-				NotificationChannedId: notificationChannel.id,
-				ItemHash:              feedProcessorUpdate.Hash(),
-				State:                 "sending",
+			sent := false
+
+			// Check all possible hashes
+			for _, hash := range []string{feedProcessorUpdate.Hash(), feedProcessorUpdate.title + "|" + feedProcessorUpdate.url} {
+				history := History{
+					UserId:                notificationChannel.userProcessor.id,
+					FeedId:                feedProcessorUpdate.feedId,
+					NotificationChannedId: notificationChannel.id,
+					ItemHash:              hash,
+				}
+
+				result := db.FirstOrCreate(&history, history)
+
+				log.Println("[TelegramNotificationChannel::Run] Got result", result)
+
+				if result.Error == nil {
+					if history.State == "sent" {
+						sent = true
+					}
+				} else {
+					continue
+				}
 			}
 
-			result := db.FirstOrCreate(&history, history)
+			if !sent {
+				history := History{
+					UserId:                notificationChannel.userProcessor.id,
+					FeedId:                feedProcessorUpdate.feedId,
+					NotificationChannedId: notificationChannel.id,
+					ItemHash:              feedProcessorUpdate.Hash(),
+					State:                 "sending",
+				}
 
-			log.Println(result)
-
-			if result.Error != nil {
-				log.Println("[TelegramNotificaionChannel::Run] Query failed", history, result)
-			} else if history.State == "sending" {
 				db.Transaction(
 					func(tx *gorm.DB) error {
 						result := tx.Debug().Clauses(clause.Locking{Strength: "UPDATE"}).Find(&history)
@@ -95,27 +117,23 @@ func (notificationChannel *TelegramNotificationChannel) Run() {
 							return result.Error
 						}
 
-						if history.State == "sending" {
-							// TODO Send message to telegram
-							log.Println("[TelegramNotificaionChannel::Run] Sending telegram update", feedProcessorUpdate, notificationChannel)
+						log.Println("[TelegramNotificaionChannel::Run] Sending telegram update", feedProcessorUpdate, notificationChannel)
+						message := NewTelegramMessage(
+							feedProcessorUpdate.title,
+							feedProcessorUpdate.description,
+							feedProcessorUpdate.url,
+							feedProcessorUpdate.feedTitle,
+							feedProcessorUpdate.feedLink,
+						)
+						err := api.SendMessage(notification.Identifier, message)
 
-							message := NewTelegramMessage(
-								feedProcessorUpdate.title,
-								feedProcessorUpdate.description,
-								feedProcessorUpdate.url,
-								feedProcessorUpdate.feedTitle,
-								feedProcessorUpdate.feedLink,
-							)
-							err := api.SendMessage(notification.Identifier, message)
+						if err == nil {
+							history.State = "sent"
+							result := tx.Debug().Save(&history)
 
-							if err == nil {
-								history.State = "sent"
-								result := tx.Debug().Save(&history)
-
-								if result.Error != nil {
-									log.Println("[TelegramNotificaionChannel::Run] Query failed", result)
-									return result.Error
-								}
+							if result.Error != nil {
+								log.Println("[TelegramNotificaionChannel::Run] Query failed", result)
+								return result.Error
 							}
 						}
 
@@ -454,6 +472,7 @@ func (rssFeedUpdateGenerator *RssFeedUpdateGenerator) Run() {
 					title:       item.Title,
 					description: item.Description,
 					url:         item.Link,
+					hash:        item.Link,
 				}
 				rssFeedUpdateGenerator.Updates <- feedUpdate
 			}

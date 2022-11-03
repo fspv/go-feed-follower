@@ -42,10 +42,11 @@ require (
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.23.0 // indirect
+	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa // indirect
 	golang.org/x/net v0.0.0-20221014081412-f15817d10f9b // indirect
 	golang.org/x/oauth2 v0.0.0-20221014153046-6fdb5e3db783 // indirect
-	golang.org/x/sys v0.0.0-20220731174439-a90be440212d // indirect
-	golang.org/x/text v0.3.7 // indirect
+	golang.org/x/sys v0.1.0 // indirect
+	golang.org/x/text v0.4.0 // indirect
 	golang.org/x/time v0.1.0 // indirect
 	google.golang.org/api v0.100.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
@@ -56,6 +57,5 @@ require (
 require (
 	github.com/microcosm-cc/bluemonday v1.0.21
 	github.com/pkg/errors v0.9.1 // indirect
-	golang.org/x/crypto v0.0.0-20220926161630-eccd6366d1be // indirect
 	google.golang.org/genproto v0.0.0-20221018160656-63c7b68cfc55 // indirect
 )
