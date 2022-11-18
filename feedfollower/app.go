@@ -27,7 +27,7 @@ type FeedUpdate struct {
 }
 
 func (feedUpdate *FeedUpdate) Hash() string {
-	return (*feedUpdate).hash
+	return feedUpdate.hash
 }
 
 type Observer interface {
@@ -45,7 +45,7 @@ type TelegramNotificationChannel struct {
 	id                          uint
 	userProcessor               *UserProcessor
 	notificationType            string
-	feedProcessorUpdatesChannel chan FeedUpdate // TODO: is it passed correctly by reference?
+	feedProcessorUpdatesChannel chan FeedUpdate
 	active                      bool
 	wg                          *sync.WaitGroup
 	ctx                         context.Context
@@ -54,10 +54,11 @@ type TelegramNotificationChannel struct {
 func (notificationChannel *TelegramNotificationChannel) Run() {
 	defer notificationChannel.Close()
 
-	(*notificationChannel).active = true
+	notificationChannel.active = true
 
 	db := connectDatabase()
 	var notification NotificationChannel
+
 	// TODO handle errors
 	db.First(&notification, NotificationChannel{Id: notificationChannel.id})
 
@@ -70,7 +71,7 @@ func (notificationChannel *TelegramNotificationChannel) Run() {
 		case <-notificationChannel.ctx.Done():
 			log.Println("[TelegramNotificaionChannel::Run] Requested shutdown")
 			return
-		case feedProcessorUpdate := <-(*notificationChannel).feedProcessorUpdatesChannel:
+		case feedProcessorUpdate := <-notificationChannel.feedProcessorUpdatesChannel:
 
 			// TODO: verify transactions logic
 			db := connectDatabase()
@@ -148,13 +149,13 @@ func (notificationChannel *TelegramNotificationChannel) Run() {
 
 func (notificationChannel *TelegramNotificationChannel) Notify(feedProcessorUpdate FeedUpdate) {
 	log.Println("[TelegramNotificationChannel::Notify] Got notification", feedProcessorUpdate)
-	if (*notificationChannel).active {
-		(*notificationChannel).feedProcessorUpdatesChannel <- feedProcessorUpdate
+	if notificationChannel.active {
+		notificationChannel.feedProcessorUpdatesChannel <- feedProcessorUpdate
 	}
 }
 
 func (notificationChannel *TelegramNotificationChannel) Id() uint {
-	return (*notificationChannel).id
+	return notificationChannel.id
 }
 
 func (notificationChannel *TelegramNotificationChannel) Close() {
@@ -162,9 +163,9 @@ func (notificationChannel *TelegramNotificationChannel) Close() {
 
 	log.Println("[TelegramNotificationChannel::Close] Shutting down")
 
-	(*notificationChannel).userProcessor.Unsubscribe(notificationChannel)
+	notificationChannel.userProcessor.Unsubscribe(notificationChannel)
 
-	(*notificationChannel).active = false
+	notificationChannel.active = false
 
 	close(notificationChannel.feedProcessorUpdatesChannel)
 }
@@ -181,7 +182,7 @@ type UserProcessor struct {
 
 func (userProcessor *UserProcessor) Subscribe(observer Observer) bool {
 	// Returns false if subscribed already
-	_, loaded := (*userProcessor).observers.LoadOrStore(observer.Id(), &observer)
+	_, loaded := userProcessor.observers.LoadOrStore(observer.Id(), &observer)
 	if !loaded {
 		log.Println("[UserProcessor::Subscribe] New observer subscribed", observer, userProcessor)
 	} else {
@@ -192,14 +193,14 @@ func (userProcessor *UserProcessor) Subscribe(observer Observer) bool {
 
 func (userProcessor *UserProcessor) Unsubscribe(observer Observer) {
 	log.Println("[UserProcessor::Unsubscribe] Unsubscribing", observer)
-	(*userProcessor).observers.Delete(observer.Id())
+	userProcessor.observers.Delete(observer.Id())
 }
 
 func (userProcessor *UserProcessor) Notify(feedProcessorUpdate FeedUpdate) {
 	log.Println("[UserProcessor::Notify] Got notification", feedProcessorUpdate)
 
-	if (*userProcessor).active {
-		(*userProcessor).feedProcessorUpdatesChannel <- feedProcessorUpdate
+	if userProcessor.active {
+		userProcessor.feedProcessorUpdatesChannel <- feedProcessorUpdate
 	} else {
 		log.Println("[UserProcessor::Notify] Ignoring notification", feedProcessorUpdate)
 	}
@@ -207,24 +208,24 @@ func (userProcessor *UserProcessor) Notify(feedProcessorUpdate FeedUpdate) {
 
 func (userProcessor *UserProcessor) NotifySubscribers(feedProcessorUpdate FeedUpdate) {
 	log.Println("[UserProcessor::NotifySubscribers] Notifying with", feedProcessorUpdate)
-	(*userProcessor).observers.Range(func(key, value interface{}) bool {
+	userProcessor.observers.Range(func(key, value interface{}) bool {
 		(*(value.(*Observer))).Notify(feedProcessorUpdate)
 		return true
 	})
 }
 
 func (userProcessor *UserProcessor) Id() uint {
-	return (*userProcessor).id
+	return userProcessor.id
 }
 
 func (userProcessor *UserProcessor) Close() {
 	log.Println("[UserProcessor::Close] Shutting down")
 
 	// Unsubscribe myself from the parent observervable
-	(*userProcessor).feedProcessor.Unsubscribe(userProcessor)
+	userProcessor.feedProcessor.Unsubscribe(userProcessor)
 
 	// Unsubscribe all my observers
-	(*userProcessor).observers.Range(func(key, value interface{}) bool {
+	userProcessor.observers.Range(func(key, value interface{}) bool {
 		userProcessor.Unsubscribe((*(value.(*Observer))))
 		return true
 	})
@@ -236,7 +237,7 @@ func (userProcessor *UserProcessor) Close() {
 
 func (userProcessor *UserProcessor) SyncNotificationChannels() {
 	db := connectDatabase()
-	rows, err := db.Model(&NotificationChannel{}).Where("user_id = ?", (*userProcessor).id).Rows()
+	rows, err := db.Model(&NotificationChannel{}).Where("user_id = ?", userProcessor.id).Rows()
 
 	if err != nil {
 		panic("Failed to fetch results from the database")
@@ -269,7 +270,7 @@ func (userProcessor *UserProcessor) Run() {
 	defer userProcessor.wg.Done()
 	defer userProcessor.Close()
 
-	(*userProcessor).active = true
+	userProcessor.active = true
 
 	// Regularily update notification channel list
 	log.Println("[UserProcessor::Run] Starting", userProcessor)
@@ -290,9 +291,9 @@ func (userProcessor *UserProcessor) Run() {
 			case <-userProcessor.ctx.Done():
 				log.Println("[UserProcessor::Run] Requested shutdown, exiting", userProcessor)
 				return
-			case feedProcessorUpdate := <-(*userProcessor).feedProcessorUpdatesChannel:
+			case feedProcessorUpdate := <-userProcessor.feedProcessorUpdatesChannel:
 				// On new feedProcessor update fan out to all the notification channels
-				(*userProcessor).NotifySubscribers(feedProcessorUpdate)
+				userProcessor.NotifySubscribers(feedProcessorUpdate)
 			}
 		}
 	}()
@@ -312,7 +313,7 @@ type FeedProcessor struct {
 
 func (feedProcessor *FeedProcessor) Subscribe(observer Observer) bool {
 	// Returns false if subscribed already
-	_, loaded := (*feedProcessor).observers.LoadOrStore(observer.Id(), &observer)
+	_, loaded := feedProcessor.observers.LoadOrStore(observer.Id(), &observer)
 	if !loaded {
 		log.Println("[FeedProcessor::Subscribe] New observer subscribed", observer)
 	} else {
@@ -323,13 +324,13 @@ func (feedProcessor *FeedProcessor) Subscribe(observer Observer) bool {
 
 func (feedProcessor *FeedProcessor) Unsubscribe(observer Observer) {
 	log.Println("[FeedProcessor::Unsubscribe] Unsubscribing", observer)
-	(*feedProcessor).observers.Delete(observer.Id())
+	feedProcessor.observers.Delete(observer.Id())
 }
 
 func (feedProcessor *FeedProcessor) NotifySubscribers(feedProcessorUpdate FeedUpdate) {
 	log.Println("[FeedProcessor::NotifySubscribers] Notifying with", feedProcessorUpdate)
 
-	(*feedProcessor).observers.Range(func(key, value interface{}) bool {
+	feedProcessor.observers.Range(func(key, value interface{}) bool {
 		(*(value.(*Observer))).Notify(feedProcessorUpdate)
 		return true
 	})
@@ -342,7 +343,7 @@ func (feedProcessor *FeedProcessor) FetchUpdates() {
 
 	for feedProcessorUpdate := range feedUpdateGenerator.UpdatesChannel() {
 		log.Println("[FeedProcessor::FetchUpdates] Got update", feedProcessorUpdate)
-		(*feedProcessor).NotifySubscribers(feedProcessorUpdate)
+		feedProcessor.NotifySubscribers(feedProcessorUpdate)
 	}
 }
 
@@ -358,7 +359,7 @@ func (feedProcessor *FeedProcessor) SyncUserProcessors() {
 	log.Println("[FeedProcessor::SyncUserProcessors] Fetching data", feedProcessor)
 	// TODO add timeout of processors execution
 	db := connectDatabase()
-	rows, err := db.Model(&UserFeed{}).Where("feed_id = ?", (*feedProcessor).id).Rows()
+	rows, err := db.Model(&UserFeed{}).Where("feed_id = ?", feedProcessor.id).Rows()
 
 	if err != nil {
 		log.Println("Failed to fetch results from the database", err)
@@ -390,7 +391,7 @@ func (feedProcessor *FeedProcessor) Close() {
 	log.Println("[FeedProcessor::Close] Shutting down")
 
 	// Unsubscribe all my observers
-	(*feedProcessor).observers.Range(func(key, value interface{}) bool {
+	feedProcessor.observers.Range(func(key, value interface{}) bool {
 		feedProcessor.Unsubscribe((*(value.(*Observer))))
 		return true
 	})
@@ -479,7 +480,7 @@ func (rssFeedUpdateGenerator *RssFeedUpdateGenerator) Run() {
 		},
 		120*time.Second,
 		&wg,
-		(*rssFeedUpdateGenerator).ctx,
+		rssFeedUpdateGenerator.ctx,
 	)
 	wg.Wait()
 }
@@ -512,7 +513,7 @@ func (feedProcessors *FeedProcessors) Update() {
 		var feed Feed
 		db.ScanRows(rows, &feed)
 
-		_, loaded := (*(*feedProcessors).Processors).LoadOrStore(feed.Id, true)
+		_, loaded := feedProcessors.Processors.LoadOrStore(feed.Id, true)
 
 		if !loaded {
 			log.Println("Initializing feed processor", feed.Id)
@@ -521,7 +522,7 @@ func (feedProcessors *FeedProcessors) Update() {
 				FeedId:  feed.Id,
 				Updates: make(chan FeedUpdate),
 				wg:      feedProcessors.wg,
-				ctx:     (*feedProcessors).ctx,
+				ctx:     feedProcessors.ctx,
 			}
 			feedProcessors.wg.Add(1)
 			go feedUpdateGenerator.Run()
@@ -530,7 +531,7 @@ func (feedProcessors *FeedProcessors) Update() {
 				id:               feed.Id,
 				observers:        sync.Map{},
 				updatesGenerator: feedUpdateGenerator,
-				ctx:              (*feedProcessors).ctx,
+				ctx:              feedProcessors.ctx,
 				wg:               feedProcessors.wg,
 			}
 			feedProcessors.wg.Add(1)
