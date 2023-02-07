@@ -595,8 +595,10 @@ func Run() {
 	wg.Add(1)
 	go RunPeriodically(feedProcessors.Update, 300*time.Second, &wg, ctx)
 
+	config := getConfiguration()
+
 	api := &TelegramBotAPI{}
-	api.Start(os.Getenv("TELEGRAM_BOT_API_KEY"), true)
+	api.Start(config.TelegramBotApiKey, true)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()

@@ -3,16 +3,16 @@ package feedfollower
 import (
 	"fmt"
 	"log"
-	"os"
 	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"sync"
+
 	_ "github.com/GoogleCloudPlatform/cloudsql-proxy/proxy/dialers/postgres"
 	"gorm.io/driver/postgres"
-	"sync"
 )
 
 var dbSingleton *gorm.DB
@@ -70,15 +70,14 @@ func connectDatabase() *gorm.DB {
 }
 
 func connectDatabaseEnableTransactions(transactions bool) *gorm.DB {
+	config := getConfiguration()
 
 	var (
-		// Either a DB_USER or a DB_IAM_USER should be defined. If both are
-		// defined, DB_IAM_USER takes precedence.
-		dbUser                 = os.Getenv("DB_USER")                  // e.g. 'my-db-user'
-		dbIAMUser              = os.Getenv("DB_IAM_USER")              // e.g. 'sa-name@project-id.iam'
-		dbPwd                  = os.Getenv("DB_PASS")                  // e.g. 'my-db-password'
-		dbName                 = os.Getenv("DB_NAME")                  // e.g. 'my-database'
-		instanceConnectionName = os.Getenv("INSTANCE_CONNECTION_NAME") // e.g. 'project:region:instance'
+		dbUser                 = config.PostgresUser
+		dbIAMUser              = config.PostgresIamUser
+		dbPwd                  = config.PostgresPassword
+		dbName                 = config.PostgresDatabase
+		instanceConnectionName = config.PostgresInstanceConnectionName
 		// usePrivate             = os.Getenv("PRIVATE_IP")
 	)
 
